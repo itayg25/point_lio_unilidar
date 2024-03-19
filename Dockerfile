@@ -44,10 +44,8 @@ RUN apt-get install ros-noetic-rviz -y
 
 # Copy the setup.sh script into the container
 COPY setup.sh .
-RUN source /opt/ros/noetic/setup.bash
-RUN catkin_make
 # Make the setup script executable and run it
-# RUN chmod +x ./setup.sh && sudo ./setup.sh
+RUN chmod +x ./setup.sh && sudo ./setup.sh
 
 COPY run-unilidar-map.sh .
 
