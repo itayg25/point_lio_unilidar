@@ -82,6 +82,8 @@ Firstly, you should connect our lidar to your PC serial port, and supply power f
 
 Besides, to ensure proper initialization of the IMU, it is advisable to keep the lidar in a stationary state during the initial few seconds of algorithm execution.
 
+you can use `tmux` to run both commands at the same time
+
 Run `unilidar`:
 ```
 cd unilidar_sdk/unitree_lidar_ros
@@ -91,9 +93,9 @@ source devel/setup.bash
 roslaunch unitree_lidar_ros run_without_rviz.launch
 ```
 
-Run `Point-LIO`:
+Run `Point-LIO` from inside the `unilidar_sdk/unitree_lidar_ros` folder:
 ```
-cd catkin_unilidar_point_lio
+cd catkin_point_lio_unilidar
 
 source devel/setup.bash
 
@@ -142,6 +144,18 @@ You can use the `pcl_viewer` tool to view this pcd file:
 ```
 pcl_viewer scans.pcd 
 ```
+
+### Run using dockerfile
+
+make sure you have docker running
+
+```bash 
+
+suod chmod +x ./install-docker.sh
+suod chmod +x ./start.sh
+sudo ./install-docker.sh && sudo ./start.sh
+```
+
 
 ## Version History
 
