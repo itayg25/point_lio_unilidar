@@ -8,6 +8,7 @@
 #include <Python.h>
 #include <so3_math.h>
 #include <Eigen/Core>
+#include <boost/filesystem.hpp>
 
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
@@ -32,6 +33,7 @@
 #define MAXN (720000)
 #define PUBFRAME_PERIOD (20)
 
+namespace fs = boost::filesystem;
 const float MOV_THRESHOLD = 1.5f;
 
 mutex mtx_buffer;
@@ -93,14 +95,12 @@ nav_msgs::Path path;
 nav_msgs::Odometry odomAftMapped;
 geometry_msgs::PoseStamped msg_body_pose;
 
-
 void SigHandle(int sig)
 {
     flg_exit = true;
     ROS_WARN("catch sig %d", sig);
     sig_buffer.notify_all();
 }
-
 
 inline void dump_lio_state_to_log(FILE *fp)
 {
@@ -141,7 +141,6 @@ inline void dump_lio_state_to_log(FILE *fp)
     fflush(fp);
 }
 
-
 void pointBodyLidarToIMU(PointType const *const pi, PointType *const po)
 {
 
@@ -177,7 +176,6 @@ void points_cache_collect()
     ikdtree.acquire_removed_points(points_history);
     points_cache_size = points_history.size();
 }
-
 
 BoxPointType LocalMap_Points;
 bool Localmap_Initialized = false;
@@ -245,7 +243,6 @@ void lasermap_fov_segment()
     if (cub_needrm.size() > 0)
         int kdtree_delete_counter = ikdtree.Delete_Point_Boxes(cub_needrm);
 }
-
 
 void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
@@ -348,7 +345,6 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     mtx_buffer.unlock();
     sig_buffer.notify_all();
 }
-
 
 // void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg)
 // {
@@ -473,7 +469,6 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
     sig_buffer.notify_all();
 }
 
-
 bool sync_packages(MeasureGroup &meas)
 {
 
@@ -592,7 +587,6 @@ bool sync_packages(MeasureGroup &meas)
     return true;
 }
 
-
 int process_increments = 0;
 void map_incremental()
 {
@@ -658,68 +652,61 @@ void publish_init_kdtree(const ros::Publisher &pubLaserCloudFullRes)
     pubLaserCloudFullRes.publish(laserCloudmsg);
 }
 
-
 PointCloudXYZI::Ptr pcl_wait_pub(new PointCloudXYZI(500000, 1));
 PointCloudXYZI::Ptr pcl_wait_save(new PointCloudXYZI());
+
+
 void publish_frame_world(const ros::Publisher &pubLaserCloudFullRes)
 {
     if (scan_pub_en)
     {
-        PointCloudXYZI::Ptr laserCloudFullRes(feats_down_body);
-        int size = laserCloudFullRes->points.size();
+        sensor_msgs::PointCloud2 laserCloudMsg;
+        pcl::toROSMsg(*feats_down_body, laserCloudMsg);
 
-        PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
-
-        for (int i = 0; i < size; i++)
-        {
-
-            laserCloudWorld->points[i].x = feats_down_world->points[i].x;
-            laserCloudWorld->points[i].y = feats_down_world->points[i].y;
-            laserCloudWorld->points[i].z = feats_down_world->points[i].z;
-            laserCloudWorld->points[i].intensity = feats_down_world->points[i].intensity;
-        }
-        sensor_msgs::PointCloud2 laserCloudmsg;
-        pcl::toROSMsg(*laserCloudWorld, laserCloudmsg);
-
-        laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
-        laserCloudmsg.header.frame_id = "camera_init";
-        pubLaserCloudFullRes.publish(laserCloudmsg);
+        laserCloudMsg.header.stamp = ros::Time().fromSec(lidar_end_time);
+        laserCloudMsg.header.frame_id = "camera_init";
+        pubLaserCloudFullRes.publish(laserCloudMsg);
         publish_count -= PUBFRAME_PERIOD;
     }
 
-    /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. noted that pcd save will influence the real-time performences **/
-    if (pcd_save_en)
+    if (pcd_save_en && !feats_down_world->empty())
     {
-        int size = feats_down_world->points.size();
-        PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
-
-        for (int i = 0; i < size; i++)
-        {
-            laserCloudWorld->points[i].x = feats_down_world->points[i].x;
-            laserCloudWorld->points[i].y = feats_down_world->points[i].y;
-            laserCloudWorld->points[i].z = feats_down_world->points[i].z;
-            laserCloudWorld->points[i].intensity = feats_down_world->points[i].intensity;
-        }
-
-        *pcl_wait_save += *laserCloudWorld;
-
         static int scan_wait_num = 0;
         scan_wait_num++;
-        if (pcl_wait_save->size() > 0 && pcd_save_interval > 0 && scan_wait_num >= pcd_save_interval)
+        if (scan_wait_num >= pcd_save_interval)
         {
+            // Adjusted root directory path
+            std::string directory_path = "/PCD/";
+
+            // Check if the directory exists and create it if it doesn't
+            if (!fs::exists(directory_path))
+            {
+                try {
+                    fs::create_directories(directory_path);
+                } catch (const fs::filesystem_error& e) {
+                    std::cerr << "Error creating directory: " << e.what() << '\n';
+                    return; // Stop execution if we can't create the directory
+                }
+            }
+
             pcd_index++;
-            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
+            std::string all_points_dir = directory_path + "scans_" + std::to_string(pcd_index) + ".pcd";
             pcl::PCDWriter pcd_writer;
-            cout << "current scan saved to /PCD/" << all_points_dir << endl;
-            pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+            std::cout << "Current scan saved to " << all_points_dir << std::endl;
+
+            if (pcd_writer.writeBinary(all_points_dir, *pcl_wait_save) == -1)
+            {
+                PCL_ERROR("Failed to write the PCD file at %s\n", all_points_dir.c_str());
+            }
             pcl_wait_save->clear();
             scan_wait_num = 0;
         }
+        else
+        {
+            *pcl_wait_save += *feats_down_world;
+        }
     }
 }
-
 
 void publish_frame_body(const ros::Publisher &pubLaserCloudFull_body)
 {
@@ -896,7 +883,7 @@ int main(int argc, char **argv)
     /*** ROS subscribe initialization ***/
 
     // ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? nh.subscribe(lid_topic, 200000, livox_pcl_cbk) : nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
-    
+
     ros::Subscriber sub_pcl = nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
 
     ros::Subscriber sub_imu = nh.subscribe(imu_topic, 200000, imu_cbk);
@@ -1099,10 +1086,9 @@ int main(int argc, char **argv)
                 point_this = Lidar_R_wrt_IMU * point_this + Lidar_T_wrt_IMU;
             }
 
-           
             M3D point_crossmat;
             point_crossmat << SKEW_SYM_MATRX(point_this);
-            crossmat_list[i]=point_crossmat;
+            crossmat_list[i] = point_crossmat;
         }
 
         if (!use_imu_as_input)
@@ -1442,12 +1428,32 @@ int main(int argc, char **argv)
 
     if (pcl_wait_save->size() > 0 && pcd_save_en)
     {
-        string file_name = string("scans.pcd");
-        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
+        string file_name = "scans_1.pcd";
+        // Adjust the ROOT_DIR as necessary. Ensure it does not lead with a slash if relative paths are used.
+        string directory_path = "/catkin_ws/unilidar_sdk/unitree_lidar_ros/atkin_point_lio_unilidar/src/PCD/";
+        string all_points_dir = directory_path + file_name;
+
+        // Check if the directory exists. If not, create it.
+        if (!boost::filesystem::exists(directory_path))
+        {
+
+            if (!boost::filesystem::create_directories(directory_path))
+            {
+                std::cerr << "Failed to create directory: " << directory_path << std::endl;
+                // Handle error appropriately
+                // return -1; or continue; based on your context
+            }
+        }
+
         std::cout << "Saving map to file: " << all_points_dir << std::endl;
         pcl::PCDWriter pcd_writer;
-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+        if (pcd_writer.writeBinary(all_points_dir, *pcl_wait_save) == -1)
+        {
+            PCL_ERROR("Failed to write the PCD file\n");
+            // Handle error appropriately
+        }
     }
+
     fout_out.close();
     fout_imu_pbp.close();
 

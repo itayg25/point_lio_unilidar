@@ -70,7 +70,5 @@ RUN chmod +x ./run-unilidar-map.sh
 # Reset DEBIAN_FRONTEND for interactive use within the container
 ENV DEBIAN_FRONTEND=
 
-RUN apt install tmux
-
 # Keep the container running
 CMD ["sudo", "./run-unilidar-map.sh"]

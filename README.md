@@ -152,8 +152,8 @@ make sure you have docker running
 ```bash 
 
 suod chmod +x ./install-docker.sh
-suod chmod +x ./start.sh
-sudo ./install-docker.sh && sudo ./start.sh
+suod chmod +x ./start-docker.sh
+sudo ./install-docker.sh && sudo ./start-docker.sh
 ```
 
 
