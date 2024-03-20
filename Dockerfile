@@ -1,4 +1,4 @@
-# Use the official ROS Noetic image as a parent image
+
 FROM ros:noetic
 
 # Avoid prompts from apt by setting this environment variable
@@ -42,14 +42,31 @@ RUN apt-get update
 
 RUN apt-get install ros-noetic-rviz -y
 
-# Copy the setup.sh script into the container
-COPY setup.sh .
-# Make the setup script executable and run it
-RUN chmod +x ./setup.sh && sudo ./setup.sh
+RUN git clone https://github.com/unitreerobotics/unilidar_sdk.git
+
+WORKDIR /catkin_ws/unilidar_sdk/unitree_lidar_ros
+
+# Run your commands in a single RUN statement to ensure they are executed in the same shell
+RUN /bin/bash -c 'source /opt/ros/noetic/setup.bash && \
+                  catkin_make'
+
+
+RUN mkdir -p /catkin_ws/unilidar_sdk/unitree_lidar_ros/atkin_point_lio_unilidar/src
+
+WORKDIR /catkin_ws/unilidar_sdk/unitree_lidar_ros/atkin_point_lio_unilidar/src
+
+COPY . .
+
+WORKDIR /catkin_ws/unilidar_sdk/unitree_lidar_ros/atkin_point_lio_unilidar
+
+RUN /bin/bash -c 'source /opt/ros/noetic/setup.bash && \
+                  catkin_make'
 
 COPY run-unilidar-map.sh .
 
 RUN chmod +x ./run-unilidar-map.sh
+
+
 # Reset DEBIAN_FRONTEND for interactive use within the container
 ENV DEBIAN_FRONTEND=
 
