@@ -676,7 +676,7 @@ void publish_frame_world(const ros::Publisher &pubLaserCloudFullRes)
         if (scan_wait_num >= pcd_save_interval)
         {
             // Adjusted root directory path
-            std::string directory_path = "/PCD/";
+            std::string directory_path = pcd_save_path;
 
             // Check if the directory exists and create it if it doesn't
             if (!fs::exists(directory_path))

@@ -63,6 +63,7 @@ double imu_meas_omg_cov;
 
 int lidar_type;
 int pcd_save_interval;
+std::string pcd_save_path;
 
 std::vector<double> gravity_init;
 std::vector<double> gravity;
@@ -138,4 +139,5 @@ void readParameters(ros::NodeHandle &nh)
   nh.param<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
   nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, false);
   nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
+  nh.param<std::string>("pcd_save/save_path", pcd_save_path, "/pcd/");
 }
