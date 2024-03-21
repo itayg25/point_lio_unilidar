@@ -41,13 +41,17 @@ if [ ! -f $XAUTH ]; then
     xauth nlist $DISPLAY | sed -e 's/^..../ffff/' | xauth -f $XAUTH nmerge -
 fi
 
+# Generate a timestamp and create a directory for it
+TIMESTAMP_DIR=$(date +"%Y-%m-%d-%H-%M-%S")
+mkdir -p "./scans/$TIMESTAMP_DIR"
+
 echo "Running Docker container $DOCKER_IMAGE_NAME with arguments $@..."
 
-# Running the Docker container with USB access and GUI capability
+# Running the Docker container with USB access, GUI capability, and the newly created volume
 DOCKER_RUN_CMD="sudo docker run"
 
 if [ $RUN_IN_BACKGROUND -eq 1 ]; then
-    DOCKER_RUN_CMD+=" -d  -it --rm"
+    DOCKER_RUN_CMD+=" -d -it --rm"
 else
     DOCKER_RUN_CMD+=" -it --rm"
 fi
@@ -55,6 +59,7 @@ fi
 DOCKER_RUN_CMD+=" --name=ros_unilidar_container \
   --volume=$XSOCK:$XSOCK:rw \
   --volume=$XAUTH:$XAUTH:rw \
+  --volume=$(pwd)/scans/$TIMESTAMP_DIR:/pcd \
   --env=\"XAUTHORITY=${XAUTH}\" \
   --env=\"DISPLAY\" \
   --privileged \
@@ -67,7 +72,3 @@ DOCKER_RUN_CMD+=" $@"
 
 # Execute the Docker run command
 eval $DOCKER_RUN_CMD
-
-# Note: The '--device=/dev/ttyUSB0' flag grants the container access to the USB device.
-# If your device has a different name, replace '/dev/ttyUSB0' with the correct device name.
-# Using '--privileged' is required for full access to USB devices but use with caution.
