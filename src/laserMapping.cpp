@@ -30,10 +30,28 @@
 #include "parameters.h"
 #include "Estimator.h"
 
+namespace fs = boost::filesystem;
+
 #define MAXN (720000)
 #define PUBFRAME_PERIOD (20)
 
-namespace fs = boost::filesystem;
+PointCloudXYZI::Ptr path_cloud(new PointCloudXYZI());
+
+void savePathAsPointCloud(const std::string& filename) {
+    pcl::io::savePCDFileBinary(filename, *path_cloud);
+    std::cout << "Saved path point cloud to " << filename << std::endl;
+}
+
+
+struct PathPoint {
+    Eigen::Vector3d position;
+    Eigen::Quaterniond orientation;
+    Eigen::Vector3d velocity; // Assuming velocity can be directly obtained or calculated
+    double timestamp;
+};
+std::vector<PathPoint> path_points;
+
+
 const float MOV_THRESHOLD = 1.5f;
 
 mutex mtx_buffer;
@@ -563,6 +581,7 @@ PointCloudXYZI::Ptr pcl_wait_pub(new PointCloudXYZI(500000, 1));
 PointCloudXYZI::Ptr pcl_wait_save(new PointCloudXYZI());
 
 
+
 void publish_frame_world(const ros::Publisher &pubLaserCloudFullRes)
 {
     if (scan_pub_en)
@@ -663,18 +682,31 @@ void publish_odometry(const ros::Publisher &pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = "camera_init";
     odomAftMapped.child_frame_id = "aft_mapped";
-    if (publish_odometry_without_downsample)
-    {
-        odomAftMapped.header.stamp = ros::Time().fromSec(time_current);
-    }
-    else
-    {
-        odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);
-    }
-    set_posestamp(odomAftMapped.pose.pose);
+
+    odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time); // Assume lidar_end_time is current
+    set_posestamp(odomAftMapped.pose.pose); // This sets the position and orientation
+
+    // Now we extract and log additional data
+    PathPoint current_point;
+    current_point.position = Eigen::Vector3d(odomAftMapped.pose.pose.position.x,
+                                             odomAftMapped.pose.pose.position.y,
+                                             odomAftMapped.pose.pose.position.z);
+    current_point.orientation = Eigen::Quaterniond(odomAftMapped.pose.pose.orientation.w,
+                                                   odomAftMapped.pose.pose.orientation.x,
+                                                   odomAftMapped.pose.pose.orientation.y,
+                                                   odomAftMapped.pose.pose.orientation.z);
+    // Assuming velocity is available as part of the odometry message
+    // This is a simplification; actual implementation might require conversion or additional calculation
+    current_point.velocity = Eigen::Vector3d(odomAftMapped.twist.twist.linear.x,
+                                             odomAftMapped.twist.twist.linear.y,
+                                             odomAftMapped.twist.twist.linear.z);
+    current_point.timestamp = lidar_end_time; // Use the odometry timestamp
+
+    path_points.push_back(current_point); // Log the path point
 
     pubOdomAftMapped.publish(odomAftMapped);
 
+    // Existing tf broadcasting code remains unchanged
     static tf::TransformBroadcaster br;
     tf::Transform transform;
     tf::Quaternion q;
@@ -687,7 +719,20 @@ void publish_odometry(const ros::Publisher &pubOdomAftMapped)
     q.setZ(odomAftMapped.pose.pose.orientation.z);
     transform.setRotation(q);
     br.sendTransform(tf::StampedTransform(transform, odomAftMapped.header.stamp, "camera_init", "aft_mapped"));
+
+    // print debug info for the odometry message and path point
+    std::cout << "Odometry message: " << std::endl;
+    std::cout << "Position: " << current_point.position.transpose() << std::endl;
+    std::cout << "Orientation: " << current_point.orientation.coeffs().transpose() << std::endl;
+    std::cout << "Velocity: " << current_point.velocity.transpose() << std::endl;
+    std::cout << "Timestamp: " << current_point.timestamp << std::endl;
+    std::cout << "Path point: " << std::endl;
+    std::cout << "Position: " << path_points.back().position.transpose() << std::endl;
+    std::cout << "Orientation: " << path_points.back().orientation.coeffs().transpose() << std::endl;
+    std::cout << "Velocity: " << path_points.back().velocity.transpose() << std::endl;
+    std::cout << "Timestamp: " << path_points.back().timestamp << std::endl;
 }
+
 
 void publish_path(const ros::Publisher pubPath)
 {
@@ -701,7 +746,27 @@ void publish_path(const ros::Publisher pubPath)
     {
         path.poses.emplace_back(msg_body_pose);
         pubPath.publish(path);
+
     }
+}
+
+
+void savePathAsPointCloud(const std::string& filename) {
+    // Create a new point cloud object for the path
+    pcl::PointCloud<pcl::PointXYZ>::Ptr path_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+    // Fill the point cloud with points from the path
+    for (const auto& point : path_points) {
+        pcl::PointXYZ pcl_point;
+        pcl_point.x = point.position.x();
+        pcl_point.y = point.position.y();
+        pcl_point.z = point.position.z();
+        path_cloud->push_back(pcl_point);
+    }
+
+    // Save the point cloud to a PCD file
+    pcl::io::savePCDFileASCII(filename, *path_cloud);
+    std::cout << "Saved " << path_cloud->size() << " path points to " << filename << std::endl;
 }
 
 int main(int argc, char **argv)

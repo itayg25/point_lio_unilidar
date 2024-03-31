@@ -11,7 +11,7 @@ sleep 5
 (
 cd /catkin_ws/unilidar_sdk/unitree_lidar_ros/catkin_point_lio_unilidar
 source devel/setup.bash
-roslaunch point_lio_unilidar mapping_unilidar.launch 
+roslaunch point_lio_unilidar mapping_unilidar_no_rviz.launch 
 ) &
 
 # Wait for both processes to finish
