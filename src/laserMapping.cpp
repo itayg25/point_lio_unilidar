@@ -37,20 +37,14 @@ namespace fs = boost::filesystem;
 
 PointCloudXYZI::Ptr path_cloud(new PointCloudXYZI());
 
-void savePathAsPointCloud(const std::string& filename) {
-    pcl::io::savePCDFileBinary(filename, *path_cloud);
-    std::cout << "Saved path point cloud to " << filename << std::endl;
-}
-
-
-struct PathPoint {
+struct PathPoint
+{
     Eigen::Vector3d position;
     Eigen::Quaterniond orientation;
     Eigen::Vector3d velocity; // Assuming velocity can be directly obtained or calculated
     double timestamp;
 };
 std::vector<PathPoint> path_points;
-
 
 const float MOV_THRESHOLD = 1.5f;
 
@@ -580,8 +574,6 @@ void publish_init_kdtree(const ros::Publisher &pubLaserCloudFullRes)
 PointCloudXYZI::Ptr pcl_wait_pub(new PointCloudXYZI(500000, 1));
 PointCloudXYZI::Ptr pcl_wait_save(new PointCloudXYZI());
 
-
-
 void publish_frame_world(const ros::Publisher &pubLaserCloudFullRes)
 {
     if (scan_pub_en)
@@ -607,9 +599,12 @@ void publish_frame_world(const ros::Publisher &pubLaserCloudFullRes)
             // Check if the directory exists and create it if it doesn't
             if (!fs::exists(directory_path))
             {
-                try {
+                try
+                {
                     fs::create_directories(directory_path);
-                } catch (const fs::filesystem_error& e) {
+                }
+                catch (const fs::filesystem_error &e)
+                {
                     std::cerr << "Error creating directory: " << e.what() << '\n';
                     return; // Stop execution if we can't create the directory
                 }
@@ -624,7 +619,26 @@ void publish_frame_world(const ros::Publisher &pubLaserCloudFullRes)
             {
                 PCL_ERROR("Failed to write the PCD file at %s\n", all_points_dir.c_str());
             }
+            
+            // save path points to point cloud pcd
+            std::string path_points_dir = directory_path + "path_points_" + std::to_string(pcd_index) + ".pcd";
+            pcl::PCDWriter pcd_writer_path;
+            PointCloudXYZI::Ptr path_points_pcd(new PointCloudXYZI(path_points.size(), 1));
+            for (int i = 0; i < path_points.size(); i++)
+            {
+                path_points_pcd->points[i].x = path_points[i].position(0);
+                path_points_pcd->points[i].y = path_points[i].position(1);
+                path_points_pcd->points[i].z = path_points[i].position(2);
+                path_points_pcd->points[i].intensity = path_points[i].timestamp;
+            }
+            if (pcd_writer_path.writeBinary(path_points_dir, *path_points_pcd) == -1)
+            {
+                PCL_ERROR("Failed to write the PCD file at %s\n", path_points_dir.c_str());
+            }
+            
+            // Clear the point cloud and path points
             pcl_wait_save->clear();
+            path_points.clear();
             scan_wait_num = 0;
         }
         else
@@ -684,7 +698,7 @@ void publish_odometry(const ros::Publisher &pubOdomAftMapped)
     odomAftMapped.child_frame_id = "aft_mapped";
 
     odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time); // Assume lidar_end_time is current
-    set_posestamp(odomAftMapped.pose.pose); // This sets the position and orientation
+    set_posestamp(odomAftMapped.pose.pose);                           // This sets the position and orientation
 
     // Now we extract and log additional data
     PathPoint current_point;
@@ -719,20 +733,7 @@ void publish_odometry(const ros::Publisher &pubOdomAftMapped)
     q.setZ(odomAftMapped.pose.pose.orientation.z);
     transform.setRotation(q);
     br.sendTransform(tf::StampedTransform(transform, odomAftMapped.header.stamp, "camera_init", "aft_mapped"));
-
-    // print debug info for the odometry message and path point
-    std::cout << "Odometry message: " << std::endl;
-    std::cout << "Position: " << current_point.position.transpose() << std::endl;
-    std::cout << "Orientation: " << current_point.orientation.coeffs().transpose() << std::endl;
-    std::cout << "Velocity: " << current_point.velocity.transpose() << std::endl;
-    std::cout << "Timestamp: " << current_point.timestamp << std::endl;
-    std::cout << "Path point: " << std::endl;
-    std::cout << "Position: " << path_points.back().position.transpose() << std::endl;
-    std::cout << "Orientation: " << path_points.back().orientation.coeffs().transpose() << std::endl;
-    std::cout << "Velocity: " << path_points.back().velocity.transpose() << std::endl;
-    std::cout << "Timestamp: " << path_points.back().timestamp << std::endl;
 }
-
 
 void publish_path(const ros::Publisher pubPath)
 {
@@ -742,31 +743,10 @@ void publish_path(const ros::Publisher pubPath)
     msg_body_pose.header.frame_id = "camera_init";
     static int jjj = 0;
     jjj++;
-
     {
         path.poses.emplace_back(msg_body_pose);
         pubPath.publish(path);
-
     }
-}
-
-
-void savePathAsPointCloud(const std::string& filename) {
-    // Create a new point cloud object for the path
-    pcl::PointCloud<pcl::PointXYZ>::Ptr path_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-
-    // Fill the point cloud with points from the path
-    for (const auto& point : path_points) {
-        pcl::PointXYZ pcl_point;
-        pcl_point.x = point.position.x();
-        pcl_point.y = point.position.y();
-        pcl_point.z = point.position.z();
-        path_cloud->push_back(pcl_point);
-    }
-
-    // Save the point cloud to a PCD file
-    pcl::io::savePCDFileASCII(filename, *path_cloud);
-    std::cout << "Saved " << path_cloud->size() << " path points to " << filename << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -1417,13 +1397,26 @@ int main(int argc, char **argv)
             }
         }
 
-        std::cout << "Saving map to file: " << all_points_dir << std::endl;
-        pcl::PCDWriter pcd_writer;
-        if (pcd_writer.writeBinary(all_points_dir, *pcl_wait_save) == -1)
-        {
-            PCL_ERROR("Failed to write the PCD file\n");
-            // Handle error appropriately
-        }
+        // std::cout << "Saving map to file: " << all_points_dir << std::endl;
+        // pcl::PCDWriter pcd_writer;
+        // if (pcd_writer.writeBinary(all_points_dir, *pcl_wait_save) == -1)
+        // {
+        //     PCL_ERROR("Failed to write the PCD file\n");
+        //     // Handle error appropriately
+        // }
+
+        // save the path as a point cloud
+        // string path_file_name = "path.pcd";
+        // string path_dir = directory_path + path_file_name;
+        // pcl::PCDWriter path_pcd_writer;
+        // std::cout << "Saving path to file: " << path_dir << std::endl;
+        // std::cout << "Path points: " << path_points.size() << std::endl;
+
+        // if (path_pcd_writer.writeBinary(path_dir, *pcl_wait_pub) == -1)
+        // {
+        //     PCL_ERROR("Failed to write the PCD file\n");
+        //     // Handle error appropriately
+        // }
     }
 
     fout_out.close();
